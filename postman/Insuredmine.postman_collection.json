@@ -1,0 +1,195 @@
+{
+  "info": {
+    "_postman_id": "8ea4ca47-ec70-48b8-8bc2-4f2c1692256e",
+    "name": "Insuredmine Policy Import API",
+    "description": "Complete collection for the Node.js policy-import assessment. Every API response uses success, statusCode, message, data, and optional meta/errors fields. Select a local file in the upload request before sending it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{ "key": "baseUrl", "value": "http://localhost:3000" }],
+  "item": [
+    {
+      "name": "System health",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Checks only whether the API process is alive."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('API is alive', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response uses the success envelope', () => { pm.expect(body.success).to.eql(true); pm.expect(body.statusCode).to.eql(200); pm.expect(body.message).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness - MongoDB and Redis",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health/ready",
+            "description": "Requires MongoDB and Redis to be connected."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Dependencies are ready', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response uses the success envelope', () => { pm.expect(body.success).to.eql(true); pm.expect(body.statusCode).to.eql(200); });",
+                  "pm.expect(body.data.dependencies.database).to.eql('connected');",
+                  "pm.expect(body.data.dependencies.redis).to.eql('connected');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process CPU and memory metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health/metrics",
+            "description": "Shows sampled Node.js process CPU percentage, CPU restart threshold, memory usage, uptime, and whether automatic restart is enabled. CPU is sampled every five seconds after the API starts."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Metrics are available', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('CPU metrics use the standard response envelope', () => { pm.expect(body.success).to.eql(true); pm.expect(body.statusCode).to.eql(200); pm.expect(body.data.processCpuPercent === null || typeof body.data.processCpuPercent === 'number').to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Policy imports",
+      "item": [
+        {
+          "name": "Upload CSV or XLSX",
+          "request": {
+            "method": "POST",
+            "description": "Body → form-data → choose your file for key `file`. Supported extensions are .csv and .xlsx. The response is asynchronous; use Get Import Status until status is completed, failed, or duplicate.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "", "description": "Select a CSV/XLSX file" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/imports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Import accepted', () => pm.expect([202]).to.include(pm.response.code));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response uses the success envelope', () => { pm.expect(body.success).to.eql(true); pm.expect(body.statusCode).to.eql(202); });",
+                  "if (body.data && body.data.jobId) pm.environment.set('importJobId', body.data.jobId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Import Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/imports/{{importJobId}}",
+            "description": "Reads row totals, skipped/duplicate counts, errors, headers, file audit metadata, and final import status from response.data."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Policies",
+      "item": [
+        {
+          "name": "Search policy information by first name or email",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/policies/search?firstName=jay&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "policies", "search"],
+              "query": [
+                {
+                  "key": "firstName",
+                  "value": "jay",
+                  "description": "Use only for a case-insensitive prefix search. Example: jay returns Jay, Jayesh, etc."
+                },
+                {
+                  "key": "email",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Use only for a case-insensitive partial email search. Example: @gmail.com. Do not send with firstName."
+                },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Provide exactly one search parameter. firstName performs a case-insensitive prefix search (jay → Jay, Jayesh); email performs a case-insensitive partial search (@gmail.com). Sending firstName and email together returns HTTP 400. Policies are in response.data and pagination/search information is in response.meta."
+          }
+        },
+        {
+          "name": "Aggregate policies by user",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/policies/aggregated-by-user?page=1&limit=20",
+            "description": "Returns paginated policy count and total premium per user. Data is in response.data; total, page, limit, and totalPages are in response.meta. page defaults to 1 and limit defaults to 20 (maximum 100)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scheduled messages",
+      "item": [
+        {
+          "name": "Schedule message - ISO timezone preferred",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Renewal reminder\",\n  \"scheduledFor\": \"2026-10-01T09:30:00+05:30\"\n}"
+            },
+            "url": "{{baseUrl}}/api/messages",
+            "description": "Redis and npm run worker:messages must be running. The explicit +05:30 offset avoids timezone ambiguity."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": ["pm.test('Message accepted', () => pm.response.to.have.status(201));"] }
+            }
+          ]
+        },
+        {
+          "name": "Schedule message - legacy day/time",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Legacy reminder\",\n  \"day\": \"2026-10-01\",\n  \"time\": \"09:30\"\n}"
+            },
+            "url": "{{baseUrl}}/api/messages",
+            "description": "Backward-compatible input. It uses the server's local timezone, so prefer the ISO request above."
+          }
+        }
+      ]
+    }
+  ]
+}
