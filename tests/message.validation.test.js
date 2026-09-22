@@ -22,4 +22,15 @@ describe('scheduled-message validation', () => {
   test('requires a scheduling value', () => {
     expect(() => createMessageSchema.parse({ message: 'Reminder' })).toThrow();
   });
+
+  test('rejects ambiguous ISO and legacy schedule inputs', () => {
+    expect(() =>
+      createMessageSchema.parse({
+        message: 'Reminder',
+        scheduledFor: '2026-10-01T09:30:00+05:30',
+        day: '2026-10-01',
+        time: '09:30'
+      })
+    ).toThrow('Provide either scheduledFor or day and time, not both');
+  });
 });

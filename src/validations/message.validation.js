@@ -14,7 +14,15 @@ const createMessageSchema = z
       .optional()
   })
   .superRefine((value, context) => {
-    if (!value.scheduledFor && !(value.day && value.time)) {
+    const hasIsoTimestamp = Boolean(value.scheduledFor);
+    const hasLegacyDateTime = Boolean(value.day && value.time);
+
+    if (hasIsoTimestamp && (value.day || value.time)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide either scheduledFor or day and time, not both'
+      });
+    } else if (!hasIsoTimestamp && !hasLegacyDateTime) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'scheduledFor or both day and time are required'

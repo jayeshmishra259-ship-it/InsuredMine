@@ -22,18 +22,40 @@ async function createImport(file) {
     logger.info({ jobId: job.id, duplicateOf: originalJob.id }, 'Identical import file flagged as duplicate');
     return job;
   }
-  const worker = new Worker(path.resolve(__dirname, '../workers/policy-import.worker.js'), {
-    workerData: { jobId: String(job._id), filePath: file.path, mongoUri, sourceFileName: file.originalname }
-  });
+  startImportWorker(job, file);
 
-  worker.on('error', (error) => logger.error({ err: error, jobId: job.id }, 'Import worker error'));
+  return job;
+}
+
+function startImportWorker(job, file) {
+  let worker;
+  try {
+    worker = new Worker(path.resolve(__dirname, '../workers/policy-import.worker.js'), {
+      workerData: { jobId: String(job._id), filePath: file.path, mongoUri, sourceFileName: file.originalname }
+    });
+  } catch (error) {
+    void markImportFailed(job.id, error);
+    logger.error({ err: error, jobId: job.id }, 'Unable to start import worker');
+    return;
+  }
+
+  worker.on('error', (error) => {
+    void markImportFailed(job.id, error);
+    logger.error({ err: error, jobId: job.id }, 'Import worker error');
+  });
   worker.on('exit', (code) => {
-    if (code > 1) {
+    if (code !== 0) {
+      void markImportFailed(job.id, new Error(`Import worker exited with code ${code}`));
       logger.error({ code, jobId: job.id }, 'Import worker exited unexpectedly');
     }
   });
+}
 
-  return job;
+async function markImportFailed(jobId, error) {
+  await ImportJob.findByIdAndUpdate(jobId, {
+    status: 'failed',
+    error: error.message
+  }).catch((updateError) => logger.error({ err: updateError, jobId }, 'Unable to mark import as failed'));
 }
 
 function hashFile(filePath) {
@@ -46,4 +68,4 @@ function hashFile(filePath) {
   });
 }
 
-module.exports = { createImport, hashFile };
+module.exports = { createImport, hashFile, markImportFailed };
